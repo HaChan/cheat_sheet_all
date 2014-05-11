@@ -1,0 +1,4 @@
+configurationAll
+================
+
+Config for development
