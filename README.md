@@ -1,4 +1,4 @@
 configurationAll
 ================
 
-Config for development
+Cheatsheet for development
