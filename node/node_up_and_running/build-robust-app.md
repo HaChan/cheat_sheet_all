@@ -213,6 +213,125 @@ if (cluster.isMaster) {
 }
 ```
 
+The way `cluster` works is that each Node process becomes either a "master" or a "worker"process. When a master calls the `cluster.fork()`, it creates a child process that is identical to master, except for two attributes that each process can check whether it is a master or child.  In the master process - the one which script has been directly invoked by calling it with Node - `cluster.isMaster` return `true`, whereas `cluster.isWorker` return `false`. `cluster.isMaster` returns `false` on the child, whereas `cluster.isWorker` returns `true`.
 
+This example shows a master script that invokes a worker for each CPU. Each child start an HTTP server. Many processes can listen to the same socket.
 
+`cluster` provides a cross-platform way to invoke several processes that share a socket.And even when the children all share a connection to a port, if one of them is jammed, it doesn’t stop the other workers from getting connections.
 
+`cluster` is based on the `child_process` module, so it has lots of useful attributes relate to the health of the child processes. In the previous example, when a child dies, the master process print out a death notification. However, a more useful script would `cluster.fork` a new child.
+
+```javascript
+cluster.on('death', function(worker) {
+    console.log('worker ' + worker.pid + ' died');
+    cluster.fork();
+});
+```
+
+This will make the master process can keep restarting dying processes to keep the server firing on all CPUs. 
+
+Because workers can pass messages to master, we can have each worker report some stats, sush as memory usage, to the master. This will allow master to determine when workers are becoming unruly or to confirm that workers are not freezing or getting stuck in a long-running events.
+
+```javascript
+// Monitoring worker health using message passing
+var cluster = require('cluster');
+var http = require('http');
+var numCPUs = require('os').cpus().length;
+
+var rssWarn = (12 * 1024 * 1024)
+  , heapWarn = (10 * 1024 * 1024)
+
+if(cluster.isMaster){
+    for(var i=0; i<numCPUs; i++){
+        var worler = cluster.fork();
+        worker.on('message', function(m){
+            if(m.memory){
+                if(m.memory.rss > rssWarn) {
+                    console.log('worker' + m.process + ` using too much memory.');
+                }
+            }
+        })
+    }
+} else {
+    // Worker processes have a http server.
+    http.Server(function(req, res) {
+        res.writeHead(200);
+        res.end("hello world\n");
+    }).listen(8000);
+    // Report stats once a second
+    setInterval(function report(){
+        process.send({memory: process.memoryUsage(), process: process.pid});
+    }, 1000);
+}
+```
+
+Worker report on their memory usage, and the master sends an alert to the log when a process use too much memory. This repilcates the functionality of many health reporting systems that operations teams already use. The master process is allowed to send messages back to the workers too. So a master process can be treated as a lightly loaded admin interface to the workers.
+
+There are other things we can do with message passing that we can’t do from the outside of Node. Because Node relies on an event loop to do its work, there is the danger that the callback of an event in the loop could run for a long time. This means that other users of the process are not going to get their requests met until that long-running event’s callback has concluded. The master process has a connection to each worker, so a master process can expect an notification status from the worker periodically. This mean the master process can validate that the eventloop has the appropriate amount of time to execute so that it has not become stuck on one callback.
+
+Because any notification could send to the process will get added to the event queue, it would have to wait to the long-running callback to finish, so identifying a long-running callback dose not allow master process to make a callback for termination. Consequently, although master process can identify the zombie workers, it can only kill the worker and lose all the tasks it was doing.
+
+Example:
+
+```javascript
+var cluster = require('cluster');
+var http = require('http');
+var numCPUs = require('os').cpus().length;
+
+var rssWarn = (50 * 1024 * 1024)
+  , heapWarn = (50 * 1024 * 1024)
+
+var workers = {}
+
+function createWorker() {
+  var worker = cluster.fork()
+  console.log('Created worker: ' + worker.pid)
+  //allow boot time
+  workers[worker.pid] = {worker:worker, lastCb: new Date().getTime()-1000}
+  worker.on('message', function(m) {
+    if(m.cmd === "reportMem") {
+      workers[m.process].lastCb = new Date().getTime()
+      if(m.memory.rss > rssWarn) {
+        console.log('Worker ' + m.process + ' using too much memory.')
+      }
+    }
+  })
+}
+
+if(cluster.isMaster) {
+  for(var i=0; i<numCPUs; i++) {
+    createWorker()
+  }
+
+  setInterval(function() {
+    var time = new Date().getTime()
+    for(pid in workers) {
+      if(workers.hasOwnProperty(pid) &&
+         workers[pid].lastCb + 5000 < time) {
+
+        console.log('Long running worker ' + pid + ' killed')
+        workers[pid].worker.kill()
+        delete workers[pid]
+        createWorker()
+      }
+    }
+  }, 1000)
+} else {
+  //Server
+  http.Server(function(req,res) {
+    //mess up 1 in 200 reqs
+    if (Math.floor(Math.random() * 200) === 4) {
+      console.log('Stopped ' + process.pid + ' from ever finishing')
+      while(true) { continue }
+    }
+    res.writeHead(200);
+    res.end('hello world from '  + process.pid + '\n')
+  }).listen(8000)
+  //Report stats once a second
+  setInterval(function report(){
+    process.send({cmd: "reportMem", memory: process.memoryUsage(), process: process.pid})
+  }, 1000)
+}
+```
+
+Whenever a worker sends a report to the master process, the master stores the time of the report.Every second or so, the master process looks at all its workers to check whether any of them haven’t responded in longer than 5 seconds. If that is the case, it kills the stuck worker and restarts it.
