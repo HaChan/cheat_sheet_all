@@ -1028,4 +1028,337 @@ The Presentation `@default_font` is completely separate from the Document `@defa
 
 ####Module as Namespaces
 
+First, let consider what class is. A class is a conglomeration of several different ideas. A class is a factoris to produce objects: `Date.new` and the `Date` class manufactures a new instance of the `Date` class. A class is also a container for containing information, attributes and methods. When a class is created, things like methods and attributes are added to class as well.
+
+A Ruby module is a class without the factory. A module can not be instantiated but it can contain things like attributes and methods, classes... and even other module. Example:
+
+```ruby
+module Rendering
+  class Font
+    attr_accessor :name, :weight, :size
+
+    def initialize( name, weight=:normal, size=10 )
+      @name = name
+      @weight = weight
+      @size = size
+    end
+
+  end
+
+  class PaperSize
+    attr_accessor :name, :width, :height
+
+    def initialize name="US Let", width=8.5, height=11.0
+      @name = name
+      @width = width
+      @height = height
+    end
+
+  end
+end
+```
+
+To get classes in a module, use double colon `::`, like: `Rendering::Font`. Wrapping a module around classes gives some couple of advantages. It allows to group together related classes. The above example give an information that `Font` and `PaperSize` classes have something to do with Rendering. Second, when the `Font` is put inside a module, it will not likely to be collided with the `Font` class created by someone else.
+
+Modules can also hold constants, and these constants can be accessed like the way a module access its classes (in fact class name is constant), using `::`:
+
+```ruby
+module Rendering
+# Font and PaperSize classes omitted...
+
+  DEFAULT_FONT = Font.new "default"
+  DEFAULT_PAPER_SIZE = PaperSize.new
+end
+
+Rendering::DEFAULT_FONT
+```
+
+Modules can be nested:
+
+```ruby
+module WordProcessor
+  module Rendering
+    class Font
+      # Guts of class omitted...
+    end
+
+    # and so on...
+  end
+end
+```
+
+Along with classes, constants and other modules, a module can contains individual methods. Modules is a good place to put methods that just do not fit anywhere else. Example: a method used for conversion between point and inch to print, and a convenient place to put these is a module:
+
+```ruby
+module WordProcessor
+  def self.points_to_inches( points )
+    points / 72.0
+  end
+
+  def self.inches_to_points( inches )
+    inches * 72.0
+  end
+
+end
+```
+
+In this example, two methods is defined as module-level methods, which is analogous to class-level methods. And thus, it can be called directly from the module:
+
+    an_inch_full_of_points = WordProcessor.inches_to_points 1.0
+
+Module-level methods can be access with double-colon syntax `::`.
+
+**Building modules a litle at a time**
+
+In Ruby, every thing is ever really done. So, the `end` at the bottom of a module did not mean the module is done. Thus, modules can be defined in severals pieces, spread over a number of source files. The first file define the module and the other files simply add more definition to it. So, with the first example - single `Rendering` module, can be define like so: separate the Font and PaperSize class to two files
+
+`font.rb`
+
+```ruby
+module Rendering
+  class Font
+    # Bulk of class omitted...
+  end
+
+  DEFAULT_FONT = Font.new "default"
+end
+```
+
+`paper_size.rb`
+
+```ruby
+module Rendering
+  class PaperSize
+    # Bulk of class omitted...
+  end
+
+  DEFAULT_PAPER_SIZE = PaperSize.new
+end
+```
+
+Then pull both files into the place that used it:
+
+```ruby
+require "font"
+require "paper_size"
+```
+
+Now, it is like the single `Rendering` modules.
+
+**Modules are Objects**
+
+In the above example, modules is treated as relatively static containers. In Ruby everything is an object, includes modules. Thus, modules can be treated like any other object. A variable can point to a module and then it can be used in place of the module. Example:
+
+```ruby
+the_module = Rendering
+
+times_new_roman_font = the_module::Font.new "times-new-roman"
+```
+
+This object-ness of modules can be used to swap out whole groups of related classes and constants at runtime. Example: imagine there are 2 type of printer: ink jet and laser. Pretend that there are two classes for each printer type: one class submit and cancel jobs, and another class that does administrative things like turning the power off or running diagnostic test. So basically, there will be 4 classes. Using module for each of printer type to group objects:
+
+```ruby
+module TonsOToner
+  class PrintQueue
+    def submit print_job
+    end
+
+    def cancel print_job
+    end
+  end
+
+  class Administration
+    def power_off
+    end
+
+    def start_self_test
+    end
+  end
+end
+```
+
+```ruby
+module OceansOfInk
+  class PrintQueue
+    def submit print_job
+    end
+  end
+
+  class Administration
+  end
+end
+```
+
+Now a variable can be set to the correct printer-type module, and from then it will forget which kind of printe it dealing with:
+
+```ruby
+if use_laser_printer?
+  print_module = TonsOToner
+else
+  print_module = OceansOfInk
+end
+
+admin = print_module::Administration.new
+```
+
+When there are a lot of classes names that all start with the same word, like `TonsOTonerPrintQueue` and `TonsOTonerAdministration`, then a module should be created for grouping classes.
+
+####Use Modules as Mixins
+
+Ruby class is a combination of two things: a container and a factory. Class is built with full of code (container) and used to manufacture instance (factory). But Ruby class can also by _super_: Ruby class arranged in an inheritance tree, so constructing a new class involved picking parent or superclass.
+
+In Ruby, there can be insert, or "mix in", modules into the inheritance tree of classes. Mixin allow to share common code among the unrelated classes. Mixins are custom-designed to include methods in a number of different classes.
+
+**Mixin Modules**
+
+Mixin modules allow sharing code among otherwise unrelated classes. So, if multiple class want to have same ultility methods, first thing is creating a module that contain those method. Then including the module into classes that need it.
+
+Example:
+
+```ruby
+module WritingQuality
+  CLICHES = [/play fast and loose/,
+    /make no mistake/,
+    /does the trick/,
+    /off and running/,
+    /my way or the highway/]
+
+  def number_of_cliches
+    CLICHES.inject(0) do |count, phrase|
+      count += 1 if phrase =~ content
+      count
+    end
+  end
+end
+```
+
+```ruby
+class Document
+  include WritingQuality
+
+end
+
+class OtherwiseDocument < SomeSuperClass
+  include WritingQuality
+
+end
+```
+
+When including a module into a class, the methods of the module _magically_ become avaiable to the class.
+
+```ruby
+doc_instance = Document.new "title", "author", text
+doc_instance.number_of_cliches
+
+other_doc = OtherwiseDocument.new
+other_doc.number_of_cliches
+```
+
+In Ruby jargon, including a module in a class is called **mixed it in** to the class. The module is called a **mixin module**. A class maybe mixed with many modules. Example:
+
+```ruby
+module ProjectManagement
+  #code...
+end
+
+module AuthorAccountTracking
+  #code...
+end
+
+class OtherwiseDocument < SomeSuperClass
+  include WritingQuality
+  include ProjectManagement
+  include AuthorAccountTracking
+end
+```
+
+In practice, if there are several unrelated classes that need to share some code, use module to wrap those method and including the module to classes that need it.
+
+**Extending a module**
+
+Module can be use to extending not only class instance but the class itself. To make module methods become class method, there is a way to do it:
+
+```ruby
+module Finders
+  def find_by_name( name )
+    # Find a document by name...
+  end
+
+  def find_by_id( doc_id )
+    # Find a document by id
+  end
+end
+
+class Document
+  #code...
+
+  class << self
+    include Finders
+  end
+end
+```
+
+This code includes the module into the singleton class of Document. Thus, it make the methods of `Finders` singleton (class) methods of `Document`:
+
+    Document.find_by_name "name"
+
+There is a common syntax to including modules into the singleton class in Ruby:
+
+```ruby
+class Document
+  extend Finders
+
+  #code...
+end
+```
+
+When a module is mixed into a class, Ruby rewires the class hierarchy, inserting the module as a sort of pseudo superclass of the class.
+
+![](module_hierarchy.png)
+
+This explains how the module methods appear in the including classes - they effectively become methods just up the inheritance chain from the class.
+
+Although including a module inserts it into the class hierarchy, Ruby ensure that instances of a class still claim to be instances of the class, which mean `instance.class` result with the class that create this instance: `instance = Class.new`. However, module inclusion is not completely secret. To discover the modules that a class of an instance included, use `kind_of?` method on the instance. Example: if `Document` includes `WritingQuality` module, then `document_instance.kind_of? WritingQuality` will return true. Or to list a complete inheritance ancestry of a class (modules included, superclass), use `ancestors` methods on the class:
+
+```ruby
+Document.ancestors
+#return
+#[Document, WritingQuality, Object, Kernel, BasicObject]
+```
+
+Module is included into class with the mechanism: insert the module before the superclass. A new module included to a class will becomes the nearest parent class of the including class. So, the most recently included module is the first superclass. Thus, the methods in this module will always override the same method in the hierarchy.
+
+```ruby
+class PoliticalBook < Document
+  include WritingQuality
+  include PoliticalWritingQuality
+
+  # codes...
+end
+```
+
+![](module_hierarchy_sequentially.png)
+
+When writing mixin module, always consider that: what is the interface between the module and its including class?, what is the relationship between them when mixing.
+
+Since including a module in a class inserts the module into the class hierarchy, the including class not only gains access to the module’s methods but also to its constants.
+
+```ruby
+module ErrorCode
+  OK = 0
+  ERROR = 1
+  INTERNAL = 2
+  ABORT = 3
+  BUSY = 4
+end
+
+class SomeClass
+  include ErrorCode
+
+  def print_code
+    puts OK, ERROR, INTERNAL, ABORT, BUSY
+  end
+end
+```
+
 
