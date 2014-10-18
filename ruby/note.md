@@ -473,7 +473,7 @@ end
 
 In this version, the `initialize` method delegate the task of doing the compression onto the `add_text`, which itself delegate to `add_word`.
 
-####Composing Methods for Humans
+###Composing Methods for Humans
 
 The technique above is the called **composed method**. This technique advocates diving a class up into methods that have 3 characteristics:
 
@@ -483,7 +483,7 @@ The technique above is the called **composed method**. This technique advocates 
 
 - Finnally, each method needs to have a name that reflects its purpose.
 
-####Composing Ruby Methods
+###Composing Ruby Methods
 
 Having many fine-grained methods also tends to make the classes easier to test.a. Consider these test cases:
 
@@ -511,7 +511,7 @@ describe TextCompressor do
 end
 ```
 
-####One way output
+###One way output
 
 Every method should have exactly one way output, so that all the logic converges at the botton for a single return.
 
@@ -605,7 +605,7 @@ def informal_density
 end
 ```
 
-####Define Operators Respectfully
+###Define Operators Respectfully
 
 **Defining Operators in Ruby**
 
@@ -674,7 +674,7 @@ class Document
 end
 ```
 
-####Create Classes that Understand Equality
+###Create Classes that Understand Equality
 
 **An Identifier for Document**
 
@@ -783,7 +783,7 @@ class DocumentIdentifier
 end
 ```
 
-####Singleton methods and class methods
+###Singleton methods and class methods
 
 Let start with the `stub` objects of RSpec. A stub object can be create like this:
 
@@ -908,7 +908,7 @@ end
 
 This is the syntax to create a Ruby class method, and it is also a singleton method definition! It make sense because `Document` is an object instance of `Class`. This mean it inherits all method from `Class` like `name` and `superclass`. When defining a class method, the method exist only on the one class (Document), not on all classes. So, creating a method that work only for an instance is the job of singleton method.
 
-####Class Instance Variables
+###Class Instance Variables
 
 **Quick reviews of class variables**
 
@@ -1026,7 +1026,7 @@ end
 
 The Presentation `@default_font` is completely separate from the Document `@default_font` because it only attached to the Presentation class.
 
-####Module as Namespaces
+###Module as Namespaces
 
 First, let consider what class is. A class is a conglomeration of several different ideas. A class is a factoris to produce objects: `Date.new` and the `Date` class manufactures a new instance of the `Date` class. A class is also a container for containing information, attributes and methods. When a class is created, things like methods and attributes are added to class as well.
 
@@ -1203,7 +1203,7 @@ admin = print_module::Administration.new
 
 When there are a lot of classes names that all start with the same word, like `TonsOTonerPrintQueue` and `TonsOTonerAdministration`, then a module should be created for grouping classes.
 
-####Use Modules as Mixins
+###Use Modules as Mixins
 
 Ruby class is a combination of two things: a container and a factory. Class is built with full of code (container) and used to manufacture instance (factory). But Ruby class can also by _super_: Ruby class arranged in an inheritance tree, so constructing a new class involved picking parent or superclass.
 
@@ -1360,5 +1360,322 @@ class SomeClass
   end
 end
 ```
+
+###Use Blocks to Iterate.
+
+**Review**
+
+In Ruby, blocks is created by tacking them on to the end of a method call:
+
+```ruby
+do_something {puts "hello world"}
+#Or
+do_something do
+  puts "hello world"
+end
+```
+
+When a block is tacked onto the end of a method call, Ruby will package the block as sort of a secret argument and passes this secret argument to the method. The method can detect whether it has a block through `block_given?` method and execute the block with `yield`:
+
+```ruby
+def do_something
+  yield if block_given?
+end
+```
+
+Blocks can take arguments, which is supplied to `yield`:
+
+```ruby
+def do_something_with_an_arg
+  yield("Hello World") if block_given?
+end
+
+do_something_with_an_arg do |message|
+  puts "The message is #{message}"
+end
+```
+
+Blocks always return a value -last expression of the block-which is return by `yield`.
+
+An iterator method call its block once for each element in some collection, passing the element into the block as a parameter. Example:
+
+```ruby
+class Document
+  # codes...
+
+  def each_word
+    words.each {|word| yield word}
+  end
+end
+
+doc = Document.new "title", "author", "Text in the document..."
+d.each_word {|word| puts word}
+# result:
+# Text
+# in
+# the
+# document
+# ...
+```
+
+**Enumerable**
+
+The Enumerable module is a mixin that give classes all sorts of interesting collection-related methods. In order to make Enumerable work, make sure the class have the `each` method:
+
+```ruby
+class Document
+  include Enumerable
+
+  # codes...
+
+  def each
+    words.each{|word| yield word}
+  end
+end
+```
+
+Including Enumerable adds a lot of collection-related methods-which rely on the each method- to the class. So, if a instance of the Enumerable-enhanced Document is created:
+
+    doc = Document.new "Enumerable title", "Enumerable author", "Enumerable contain text"
+
+Then, it can use method like `include?` to find out whether the document includes a given word. It can provide a lot of methods for the document.
+
+If the element in the collection (in this case, string) define the `<=>` operator, the Enumerable-supplied sort method can be used to return a sorted array of all element in the collection.
+
+If a class have more than one iterating method (each), and it still want to have all the Enumerable method to work with those iterating methods, Ruby have provide the `Enumerator` class. To make it happen, first create the Enumerator instance, passing it the collection class and the name of the iterating method. Example:
+
+```ruby
+doc = Document.new "example", "russ", "We are all characters"
+enum = Enumerator.new doc, :each_character
+```
+
+Then, the `enum` instance will have all of the Enumerable methods based on the `each_character` iterator method of the `doc` collection.
+
+```ruby
+puts enum.count # print the length of the doc
+
+enum.sort # sort characters Inside doc
+```
+
+One of the problem with iterate using block is that the code in block is created by other. Block may changes the underlying collection or rasing some exception. A stray exception may not make much difference but when it come with expensive resource which need to be cleaned, it is a serious problem:
+
+```ruby
+def each_name
+  name_server = open_name_server # Get some expensive resource
+  while name_server.has_more?
+    yield name_server.read_name
+  end
+  name_server.close # Close the expensive resource
+end
+```
+
+Now, if a code block raise exceptions in mid-yield, then the expensive resource will never be cleaned. This problem can be fixed by catching exception:
+
+```ruby
+def each_name
+  name_server = open_name_server # Get some expensive resource
+  begin
+    while name_server.has_more?
+      yield name_server.read_name
+    end
+  ensure
+    name_server.close # Close the expensive resource
+  end
+end
+```
+
+Ruby allows applications to call break in mid-block. The idea is to give the code using an iterating method a way to escape early:
+
+```ruby
+def count_till_tuesday doc
+  count = 0
+  doc.each_word do |word|
+    count += 1
+    break if word == "Tuesday"
+  end
+count
+```
+
+When called from inside a block, `break` will trigger a return out of _the method that called the block_. An explicit `return` from inside the block cause the method that defined the block to return (not the called method).
+
+###Execute Around with a Block.
+
+Because code block can delivering code in any where in a function. Thus codes can be wrapped by some other helper codes like logging, exception handling and so on. Example:
+
+```ruby
+class SomeApplication
+  def do_something
+    with_logging("load") {@doc = Document.load "resume.txt"}
+    # Do something with the document...
+    with_logging("save") { @doc.save }
+  end
+
+# codes...
+
+  def with_logging description
+    begin
+      @logger.debug "Starting #{description}"
+      yield
+      @logger.debug "Completed #{description}"
+    rescue
+      @logger.error "#{description} failed!!"
+    raise
+    end
+  end
+end
+```
+
+This will make the code DRY and easy to read. The `with_logging` method can be called to log other block of code, which mean it can logging everything:
+
+```ruby
+def do_some_other_thing
+  with_logging("Compute miles in a light year") do
+    # a lot of codes
+  end
+end
+```
+
+This technique is call **execute around**. This technique is used when something need to happend before or after some operation, or when the operation fails with a exception.
+
+**Setting up Objects with an Initialization Block**
+
+Object `initialize` method can take a block, so that when create object with `new` it can take and execute a block:
+
+```ruby
+class Document
+  attr_accessor :title, :author, :content
+
+  def initialize title, author, content = ""
+    @title = title
+    @author = author
+    @content = content
+    yield( self ) if block_given?
+  end
+
+  # codes...
+end
+
+new_doc = Document.new  "US Constitution", "Madison", "" do |d|
+  d.content << "We the people"
+  d.content << "In order to form a more perfect union"
+  d.content << "provide for the common defense"
+end
+```
+
+Using execute around for Initialization is about making the code readable: _this code is setting up the new object_
+
+**Scope with Block**
+
+All of the variables that are visible just before the block (`do` or `{}`) are still visible inside the code block. Code blocks drag along the scope in which they were created.
+
+```ruby
+def do_something
+  doc = Document.load "book"
+
+  with_logging("save") {doc.save} # doc object is autpmatically visible inside the code block.
+end
+```
+
+Block execute around should take arguments only from the execute around method itself, not pass arguments directly to block. Example:
+
+```ruby
+def with_database_connection connection_info
+  connection = Database.new connection_info
+  begin
+    yield connection
+  ensure
+    connection.close
+  end
+end
+```
+
+**Return from block**
+
+The only way to return value from the block is to assign the value of the called block (through `yield`) in the method.
+
+```ruby
+def with_logging(description)
+  begin
+    @logger.debug "Starting #{description}"
+    return_value = yield
+    @logger.debug "Completed #{description}"
+    return_value
+  rescue
+    @logger.error "#{description} failed!!"
+    raise
+  end
+end
+```
+
+###Save Blocks to Execute later
+
+**Explicit Blocks**
+
+Ruby treats a code block appended to the end of a method call as a sort of implicit parameter to the call, and that parameter can only get by `yield` and `block_given?` method.
+
+To explicit passing a block to a method, simply prefixed an ampersand to the parameter at the end of the parameter list. Ruby will turn any block passed in to method into a garden-variety parameter. To run the block, calling the `call` method on the parameter represent the block. Example:
+
+```ruby
+def run_that_block &that_block
+  puts "About to run the block"
+  that_block.call if that_block
+  puts "Done running the block"
+end
+```
+
+Explicit block parameters make it easy to determine which methods expect a code block. Methods with an explicit code block parameter can also treat the block as an ordinary object. Explicit block can be stored in a variable like any other object and can be called latter, whenever it want.
+
+```ruby
+class Document
+# codes...
+
+  def on_save &block
+    @save_listener = block
+  end
+
+  def on_load &block
+    @load_listener = block
+  end
+
+  def load path
+    @content = File.read path
+    @load_listener.call(self, path) if @load_listener
+  end
+
+  def save path
+    File.open(path, "w") {|f| f.print @contents}
+    @save_listener.call(self, path) if @save_listener
+  end
+end
+```
+
+**Different between Proc and Lambda**
+
+- Proc does not check the number of passing arguments while `lambda` will check for it. Pass to few arguments to `proc` will set the excess block parameters to nil; pass to many arguments and it will ignore the extra arguments. While in lambda, it will throw an exception if the number of arguments is not match.
+
+- The `return` in a Proc will return the enclosing of the `proc` or the scope that created the block. In constrast, `lambda` return will return _from the block_. Example:
+
+```ruby
+lambda {return :foo}.call # => :foo
+Proc.new {return :foo}.call # => LocalJumpError: unexpected return
+```
+
+Code blocks drag along the variables from the code that defines them. Therefore, a variable existence will be longer than expected. Example:
+
+```ruby
+def some_method( doc )
+  big_array = Array.new( 10000000 )
+
+  # Do something with big_array...
+
+  doc.on_load do |d|
+    puts "Hey, I've been loaded!"
+  end
+end
+```
+
+Because big array was is a scope when the block is created, the block will drag along the local environment with it, which mean the block holds onto a reference to the big array even if it never uses it. Thus the big array is going to stay around for as long as the block does, in this case as long as the `doc` is around. So, if the block does not need the local variables to execute, simply clear it before defining the block.
+
+##Metaprogramming
 
 
