@@ -1678,4 +1678,244 @@ Because big array was is a scope when the block is created, the block will drag 
 
 ##Metaprogramming
 
+###Use Hooks to Keep the Program stay Informed
+
+Metaprogramming is, in fact, a set of coding technique that allows code to be generated at runtimes, therefore writing less code. Ruby support for metaprogramming starts by allowing code to stay inform about what happen around (the code) it. Like when a new class is created, when a method gets called, and even when the application is about to exit.
+
+####Hook New Subclass
+
+A hook is code that gets called when something is about to happen or has already happened. An example is when a class gain a subclass. To stay informed of the appearance of new subclasses, define a class method called `inherited`. Example:
+
+```ruby
+class SimpleBaseClass
+  def self.inherited new_subclass
+    puts "Hey #{new_subclass} is now a subclass of #{self}!"
+  end
+end
+
+class ChildClass < SimpleBaseClass
+end
+```
+
+When the interpreter reads the `end` statement of the `ChildClass`, it will print "Hey ChildClass is now a subclass of SimpleBaseClass!"
+
+Suppose that there are many documents stored in many different file formats (plain text, YAML, XML...). Thus, there will be a series of reader classes, where each reader class understand single format and turn a file format into a `Document` instance.
+
+```ruby
+class PlainTextReader < DocumentReader
+  def self.can_read? path
+    /.*\.txt/ =~ path
+  end
+
+  def initialize path
+    @path = path
+  end
+
+  def read(path)
+    File.open(path) do |f|
+      title = f.readline.chomp
+      author = f.readline.chomp
+      content = f.read.chomp
+      Document.new title, author, content
+    end
+  end
+end
+
+
+class YAMLReader < DocumentReader
+  def self.can_read? path
+    /.*\.yaml/ =~ path
+  end
+
+  def initialize path
+    @path = path
+  end
+
+  def read path
+    # Lots of simple YAML stuff omitted
+  end
+end
+
+
+class XMLReader < DocumentReader
+  def self.can_read? path
+    /.*\.xml/ =~ path
+  end
+
+  def initialize path
+    @path = path
+  end
+
+  def read path
+    # Lots of complicated XML stuff omitted
+  end
+end
+```
+
+In the `DocumentReader` class, it will handle the calling the right reader for a given file. To do this, `DocumentReader` will have to search in a list of all the reader class to find the appropriate class. To populate the list, the handy `inherited` method comes in:
+
+```ruby
+class DocumentReader
+  @reader_classes = []
+
+  def self.read path
+    reader = reader_for path
+    return nil unless reader
+    reader.read path
+  end
+
+  class << self
+    attr_reader :reader_classes
+
+    def reader_for path
+      reader_class = DocumentReader.reader_classes.find do |klass|
+        klass.can_read? path
+      end
+      reader_class ? reader_class.new(path) : nil
+    end
+
+    def inherited subclass
+      DocumentReader.reader_classes << subclass
+    end
+  end
+end
+```
+
+Every time a new DocumentReader subclass is created, the `inherited` hook will add the new subclass to the list of readers.
+
+####Infomr of Modules
+
+The module analog of `inherited` is `included`. `included` gets called when a module gets included in a class.
+
+```ruby
+module WritingQuality
+  def self.included klass
+    puts "Hey, I've been included in #{klass}"
+  end
+
+  def number_of_cliches
+  end
+end
+```
+
+A common use for the `included` hook is to add some **class methods** to the _included_ class by a module. When a module is included in a class, all of the module's instance methods will become the class instance methods. So, if `WritingQuality` module is included in a class, instances of that class will have `number_of_cliches` method. When a module is pulled into a class with `extend`, the module's methods will become class methods of the class.
+
+When a class want to have both instance methods and class methods from modules, the common way of thinking is to use two module, one with module's class methods and one with module's instance methods, and the class will include and extend the two module.
+
+With the `included` class method of module, a module will knows when it included into a class. Thus, in `included` method, a class can extend the module to have the class methods of module.
+
+```ruby
+module UsefulMethods
+  module ClassMethods
+    def a_class_method
+    end
+  end
+
+  def self.included host_class
+    host_class.extend ClassMethods
+  end
+
+  def an_instance_method
+  end
+end
+
+class Host
+  include UsefulMethods
+end
+```
+
+####Exiting
+
+The `at_exit` hook gets called just before the Ruby interpreter exits. To use `at_exit`, just call it directly with a block:
+
+```ruby
+at_exit do
+  puts "Have a nice day."
+end
+```
+
+The Ruby interpreter will fire off the block just before it expires. The `at_exit` can be called several times with different blocks each time and it will execute all the blocks with "last in/first out" order. Thus:
+
+```ruby
+at_exit do
+  puts "Have a nice day."
+end
+
+# codes...
+
+at_exit do
+  puts "Goodbye"
+end
+```
+
+The result will be:
+
+    Goodbye
+    Have a nice day.
+
+The ultimate Ruby hook might be `set_trace_func`. It will gets called whenever a method gets called or returns, when a class definition is opened with `class` keyword or closed with an `end`, when an exception get raised, and whenever a line ode code executed.
+
+
+The key to using Ruby hooks is knowing when they will or will not get called. Example with `inherited` method: If all the subclasses are in the same file with the parent class, then the `inherited` method will get called after the Ruby interpreter reads the `end` keyword of each subclass.
+
+If each subclasses are stored into a several files and they are required in a file:
+
+```ruby
+require "document_reader"
+
+require "plaintext_reader" # inherited fires for PlainTextReader
+require "xml_reader" # inherited fires for XMLReader
+require "yaml_reader" # inherited fires for YAMLReader
+```
+
+The `inherited` method will get called just after each subclass is defined, even if it in different places. It will even gets called if a subclass of the subclass is created. It will fires for all of the subclasses, not just the one that directed inherit:
+
+```ruby
+class AsianDocumentReader < DocumentReader
+end
+
+class JapaneseDocumentReader < AsianDocumentReader
+end
+
+class ChineseDocumentReader < AsianDocumentReader
+end
+
+# the inherited method will gets called 3 times.
+```
+
+Sometime, hooks do not get called. Example: the `at_exit` will not get called if a program or system crash.
+
+The `Test::Unit` framework use hook to execute test case with out to have write a main program to run it. Example:
+
+`simple_test.rb`
+
+```ruby
+require 'test/unit'
+
+class SimpleTest < Test::Unit::TestCase
+  def test_addition
+    assert_equal 2, 1 + 1
+  end
+end
+```
+
+Execute it:
+
+    ruby simple_test.rb
+
+And the test will be executed. `Test::Unit` framework use `at_exit` hook to trigger the test case.
+
+```ruby
+at_exit do
+  unless $! || Test::Unit.run?
+    exit Test::Unit::AutoRunner.run
+  end
+end
+```
+
+The `$!` variable in Ruby is a global variable which store the last exception raised. In the code above, it is used to determine whether there has been an error and if it does, do nothing. It prevent `Test::Unit` running problems code (syntax errors). It there is no exception, Test:Unit will automatically run the test.
+
+###Error Handling with method_missing
+
+
 
