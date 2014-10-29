@@ -720,7 +720,7 @@ end
 
 One problem with this implementation is that the equal is very narrow. The `instance_of?` test only accept DocumentIdentifier instance, not its subclass or any thing related to it. The `instance_of?` can be replaced by `kind_of?` method to accpet an subclass of DocumentIdentifier.
 
-But with Ruby dynamic typing, there is no need to explicit check for subclass like this. Instead, it can work with any kind of object which has the similiar value to be compared:
+But with Ruby dynamic typing, there is no need to explicit check for subclass like this. Instead, it can work with any kind of object which has the similar value to be compared:
 
 ```ruby
 def ==(other)
@@ -798,7 +798,7 @@ Look at the classes of these tow stub objects:
     puts stub_printer.class # Spec::Mocks::Mock
     puts stub_font.class    # Spec::Mocks::Mock
 
-This is the example of singleton method in ruby. A singleton method is a method defined for exactly one pbject instance. Ruby objects can declare independence from their class.
+This is the example of singleton method in ruby. A singleton method is a method defined for exactly one object instance. Ruby objects can declare independence from their class.
 
 Any object (except for numeric and symbol) can have any singleton method. The mechanics of defining singleton methods are pretty simple: `def instance.method_name`. Example:
 
@@ -1917,5 +1917,713 @@ The `$!` variable in Ruby is a global variable which store the last exception ra
 
 ###Error Handling with method_missing
 
+The mechanism of looking up method in Ruby is: it first look at the current object instance, if the method is not found, it will look up the inheritance tree until it find the method. If the method is found then it will gets called. If there is no such method, Ruby will trigger `method_missing` hook to generates the exception (NameError exception). `method_missing` can be overrided to handle the missing method.
 
+Example:
 
+```ruby
+class RepeatBackToMe
+  def method_missing  method_name, *args
+    puts "Hey, you just called the #{method_name} method"
+    puts "With these arguments: #{args.join(' ')}"
+    puts "But there ain't no such method"
+  end
+end
+
+repeat = RepeatBackToMe.new
+repeat.hello 1, 2, 3
+# result:
+# > Hey, you just called the hello method
+# > With these arguments: 1 2 3
+# > But there ain't no such method
+
+repeat.good_bye "for", "now"
+# result
+# > Hey, you just called the good_bye method
+# > With these arguments: for now
+# > But there ain't no such method
+```
+
+With that, `method_missing` can be used to give some more information when errors orcur or log the errors to examine later.
+
+**Constants Missing**
+
+Ruby provide method `const_missing` to determine whether or not the constant present. It gets called whenever Ruby detects a reference to an undefined constant. `const_missing` is a class method because constant is belong to class it self, not the instance, thus to use it, define it like this:
+
+```ruby
+class Document
+# codes...
+
+  def self.const_missing const_name
+    msg = %Q{
+      You tried to reference the constant #{const_name}
+      There is no such constant in the Document class.
+    }
+    raise msg
+  end
+end
+```
+
+The most spectacular use of `const_missing` is the way that Rails uses it to load Rubby code as needed. All of the ActiveRecord model classes are loaded through `const_missing`. The idea is to use `const_missing` method to figures out what file to require from the name of the missing class, load (require) that file, and return the loaded class:
+
+```ruby
+def self.const_missing name
+  file_name = "#{name.to_s.downcase}"
+  require file_name
+  raise "Undefined: #{name}" unless const_defined?(name)
+  const_get name
+end
+```
+
+###Delegation with method_missing
+
+In programming world, delegation is the idea that an object might secretly use another object to do part of its job. The basic concept is: when a new object wants to do something that another existing object does, the new object can simply _delegate_ the job to the existing object. The new object is supplied with a reference of the existing one, and when it need to do something, it will use the reference to call the right method.
+
+Example:
+
+Suppose that there is a program that want to create a read-only version of any `Document` and the program that gains access to one of these document is only allowed to see it for 5 seconds. And the document are liable to change anytime. To do it, a document wrapper is defined:
+
+```ruby
+class SuperSecretDocument
+  def initialize original_document, time_limit_seconds
+    @original_document = original_document
+    @time_limit_seconds = time_limit_seconds
+    @create_time = Time.now
+  end
+
+  def time_expired?
+    Time.now - @create_time >= @time_limit_seconds
+  end
+
+  def check_for_expiration
+    raise 'Document no longer available' if time_expired?
+  end
+
+  def content
+    check_for_expiration
+    return @original_document.content
+  end
+
+  def title
+    check_for_expiration
+    return @original_document.title
+  end
+
+  def author
+    check_for_expiration
+    return @original_document.author
+  end
+
+  # codes...
+end
+```
+
+The `SuperSecretDocument` class holds a reference to the `Document` instance and a time limit. As long as the time has not expired, the `SuperSecretDocument` will delegate any method call off to the original document.
+
+**The Troubles**
+
+The trouble with this traditional style of delegation is that it not fully delegate the job to the other subject. To see the problem, imagine that the `Document` class support more features like page layout, size, and so on. The `SuperSecretDocument` needs to grow right along with the `Document` class:
+
+```ruby
+class SuperSecretDocument
+  # original codes...
+
+  def page_layout
+    check_for_expiration
+    return @original_document.page_layout
+  end
+
+  def page_size
+    check_for_expiration
+    return @original_document.page_size
+  end
+end
+```
+
+The problem with this kind of delegating code is that it not let the `Document` instance do its jobs by itself, instead the SuperSecretDocument will always have to specify the job to Document.
+
+####method_missing for delegation
+
+The idea here is that when an object call a missing method, it will trigger the method_missing and in this method, the object can delegate the missing method to the appropriate object instead of rasing exception.
+
+```ruby
+class SuperSecretDocument
+  # original codes...
+
+  def method_missing name, *args
+    check_for_expiration
+    @original_document.send name, *args
+  end
+end
+```
+
+This new version of SuperSecretDocument use method_missing to catch all of the calls that need to be delegated to the original document. When it catches a method call, it uses the `send` method on original document to forward the call:
+
+    @original_document.send name, *args
+
+The `send` method can be used on an object to make arbitrary method calls on that object.
+
+This technique can works well with handling exception on the real missing method. Because it delegate the calling method to other object, the other object will handle the method_missing exception for the wrapped object.
+
+In fact, the SuperSecretDocument is generic that it can delegate the job to any other object. Example: wrap a String
+
+```ruby
+> string = "Good morning, Mr. Phelps"
+> secret_string = SuperSecretDocument.new string, 5
+> puts secret_string.length
+24
+> sleep 6
+> puts secret_string.length
+RuntimeError: Document no longer available
+```
+
+Ruby standard library have a very handy `method_missing` based delegation utility in the `delegate.rb` file. This file contains a number of classes which provide delegating with `method_missing` mechanism. The simplest one is `SimpleDelegator` class, which used as a superclass for delegating class (similar to the example). Example:
+
+```ruby
+require "delegate"
+
+class DocumentWrapper < SimpleDelegator
+  def initialize real_doc
+    super real_doc
+  end
+end
+```
+
+```ruby
+text = "The Hare was once boasting of his speed..."
+real_doc = Document.new "Hare & Tortoise", "Aesop", text
+wrapper_doc = DocumentWrapper.new real_doc
+```
+
+Any call to `wrapper_doc` will behave just like a call to the real_doc.
+
+ActiveRecord use delegation by `method_missing` to return the values of fields from a row in a table. Example:
+
+```ruby
+doc = Document.first
+
+doc.title # call method_missing
+doc.author # call method_missing
+```
+
+In the late-model version, ActiveRecord will call method_missing for the first time it access the fields methods, then it will create new function with that name so the next call will just use the newly created method instead of trigger method_missing.
+
+###Monkey patching.
+
+####Open Classes.
+
+Ruby classes work in exactly the same way with the variable declaration. Example:
+
+    name = "A"
+
+If `name` has not already been defined, the it will be defined and set the string "A" to its value. If `name` is defined then it will be set to a new value. Ruby classes work like so, if a class is defined for the first time, and later it is defined again then this time, instead of defining a new class, it will _modifying_ the existing class. Example:
+
+```ruby
+class Document
+  attr_accessor :title, :author, :content
+
+  def initialize title, author, content
+    @title = title
+    @author = author
+    @content = content
+  end
+end
+
+class Document
+  def words
+    @content.split
+  end
+
+  def word_count
+    words.size
+  end
+end
+
+doc = Document.new "Title", "Author", "Content"
+doc.words
+# [Content]
+doc.word_count
+# 1
+```
+
+This mechanism is not only able to adding new methods to an existing class, but it can also redefine existing methods on Ruby classes. This works on the "last `def` wins" principal: new method definition overwrites the old one.
+
+This technique of modifying existing classes without opening the source code of the class is called **monkey patching**.
+
+**Improving Exiting classes.**
+
+Every classes in Ruby can be modified with monkey patching technique. Example: to make `+` operator of `String` to work with `Document` instance, simply reopen the class end then overwrite the `+` method to make it work with `Document` instance.
+
+```ruby
+class String
+  def + other
+    if other.kind_of? Document
+      new_content = self + other.content
+      return Document.new(other.title, other.author, new_content)
+    end
+    result = self.dup
+    result << other.to_str
+    result
+  end
+end
+```
+
+**alias_method
+
+The downside of this `String` modification is that it will have to reproduce the original `+` method to make it work normaly (creates a bigger string from two smaller string). To avoid this, use `alias_method`. `alias_method` copies a method implementation and giving it a new name. Example: with `alias_method`, a couple of methods can be created to do exactly the same thing as `word_count`:
+
+```ruby
+class Document
+  def word_count
+    words.size
+  end
+
+  alias_method :number_of_words, :word_count
+  alias_method :size_in_words, :word_count
+end
+```
+
+`alias_method` comes in handy when modifying the existing class method and still want to keep it behavior without redefine it again. Example with `+` operator of `String`:
+
+```ruby
+class String
+  alias_method :old_addition, :+
+
+  def +(other)
+    if other.kind_of? Document
+      new_content = self + other.content
+      return Document.new other.title, other.author, new_content
+    end
+    old_addition other
+  end
+end
+```
+
+The call to `alias_method` copies the implementation of the original `+` method, then the new implementation can take advantages of the old method to keep it old behavior.
+
+**Modifying any class at anytime
+
+When a class is reopened, it can be modified by anything, a method can be made public, private or even deleted. Example:
+
+```ruby
+class Document
+  private :word_count
+end
+
+class Document
+  public :word_count
+end
+
+class Document
+  remove_method :word_count
+end
+```
+
+###Self-Modifying Classes
+
+Ruby class definition can be changed by simply repeating the class definition. If a class is already defined, to change this class, just redefinition it again like `class SameClass` and it will be changed. So how classes ge defined in the first place, let see an example:
+
+```ruby
+class EmptyClass
+  puts "hello from inside the class"
+end
+```
+
+Run the code above and the following line will be printed to the output:
+
+    hello from inside the class
+
+That mean Ruby class definitions are executable. Code in the class definitions body will get executed along with the class definitions.
+
+Let see how methods get defined with the help of this mechanism:
+
+```ruby
+require "pp"
+
+class LessEmpty
+  pp instance_methods false
+  # passing false to instance_methods will make it not return any inherited methods.
+
+  def do_something
+    puts "I'm doing something!"
+  end
+
+  pp instance_methods false
+end
+```
+
+The `instance_method` method will return all the methods defined on a class. With the above example, it can find out when the `do_something` method gets defined. When the code run, the following result will be printed:
+
+    []
+    [:do_something]
+
+This output prove that method is not defined at the top of the class - before the `def` do_something - but it is defined at the bottom after the method definition. Ruby classes are defined one step (method) at a time. When Ruby encounter the initial `class LessEmpty`, it creates a new and empty class. Then it executes the class body, the code between the `class` and `end`. Every code inside the class definition gets executed in turn.
+
+####Put Programming Logic in Classes
+
+Being able to embed code in classes means that classes can make run-time decisions about what methods to define and the code that those methods will contain. Example:
+
+```ruby
+class Document
+  # codes...
+
+  def save path
+    File.open (path, "w") do |f|
+      f.puts encrypt @title
+      f.puts encrypt @author
+      f.puts encrypt @content
+    end
+  end
+
+  if ENCRYPTION_ENABLED
+    def encrypt  string
+      string.tr "a-zA-Z", "m-za-lM-ZA-L"
+    end
+  else
+    def encrypt string
+      string
+    end
+  end
+end
+```
+
+This code starts with a `save` method, which writes the data in the document out to a file, after running through the `encrypt` method. The class-level logic will makes decision to use which encrypt method through `if..else` structure using `ENCRYPTION_ENABLED` constant. But, the ENCRYPTION_ENABLED logic runs exactly once when the class is loaded.
+
+####Class Methods that change Their Class
+
+The code run inside a class definition and the class methods has some common: they both executed with the `self` context. This mean that class methods can run directly on class definition, thus class methods can be used to make the class logics structure changes. Example:
+
+```ruby
+class Document
+  ENCRYPTION_ENABLED = true
+
+  # codes...
+
+  def self.enable_encryption enabled
+    if enabled
+      def encrypt_string string
+        string.tr "a-zA-Z", "m-za-lM-ZA-L"
+      end
+    else
+      def encrypt_string string
+        string
+      end
+    end
+  end
+
+  enable_encryption ENCRYPTION_ENABLED
+end
+```
+
+After running `enable_encryption` method, the method will return `encrypt_string` method which defined in the `self` context, which mean it is a Document instance method. With this implementation, the encryption can be toggle on and off by calling the `enable_encryption` class method from outside.
+
+    Document.enable_encryption false
+    Document.enable_encryption true
+
+Executable class definitions are wonderfully useful when writing code that will work in different environments. Example: writing code that can work for each Ruby version. In Ruby 1.9, string indexing like `"name"[2]`, will return`"m"` but in Ruby 1.8, it will return `109` which is the character encoding number. So, in order to make the 1.8 version work like 1.9, a function call `char_at` is created for that, and for each version, it will be implemented differently, like so:
+
+```ruby
+class Document
+  # codes...
+
+  if RUBY_VERSION >= '1.9'
+    def char_at index
+      @content[index]
+    end
+  else
+    def char_at index
+      @content[index].chr
+    end
+  end
+end
+```
+
+The built in `RUBY_VERSION` constant will determine which Ruby version is the code running on and it will decide what function to be created.
+
+Rails has take advantage of class modification to be able to detect the code changes on the fly, whenever a class has changed. To see why, let have an example: add a reload method to the Document class:
+
+```ruby
+class Document
+  def self.reload
+    load  __FILE__
+  end
+
+  # codes...
+end
+```
+
+The `load` method in the reload function is used to reread its own source. The `load` method is similar to `require` method. The different between `load` and `require` is that `require` keeps track of which files are already loaded so that it does not load the same file twice. The `load` method just loads the file, no matter what. So, because of reloading the class, the class definition will happen twice which make the code inside it run again, thus any change in the class will be applied. The `__FILE__` will return the path of the source file of the current class, so `load` method will load the current class again.
+
+Because `load` can not make the deleted methods disappear from the environment, thus method have to be removed _manually_ before loading the class.
+
+```ruby
+class Document
+  def self.reload
+    remove_instance_methods
+    load  __FILE__
+  end
+
+  def self.remove_instance_methods
+    instance_methods(false).each do |method|
+      remove_method method
+    end
+  end
+
+  # codes...
+end
+```
+
+The example above only delete instance methods, not class methods, class variables, and class instance variables. To remove all class methods, use this:
+
+```ruby
+class Document
+  def self.reload
+    remove_class_methods
+    load  __FILE__
+  end
+
+  # codes...
+
+  class << self
+    def remove_class_methods
+      self.singleton_methods(false).each do |method|
+        class << self; self; end.send :remove_method, method
+      end
+    end
+  end
+end
+```
+
+To remove all class variable and instances variable, use this:
+
+```ruby
+class Document
+  def self.reload
+    remove_instance_variables
+    remove_class_variables
+    load  __FILE__
+  end
+
+  # codes...
+
+  class << self
+    def remove_instance_variables
+      instance_variables.each do |variable|
+        remove_instance_variable variable
+      end
+    end
+
+    def remove_class_variables
+      class_variables.each do |variable|
+        remove_class_variable variable
+      end
+    end
+  end
+end
+```
+
+###Classes that Modify Their Subclasses
+
+First, let enhance the Document class with more features. Real document have paragraphs and fonts. So, a class for paragraphs is required for this:
+
+```ruby
+class Paragraph
+  attr_accessor :font_name, :font_size, :font_emphasis
+  attr_accessor :text
+
+  def initialize font_name, font_size, font_emphasis, text=""
+    @font_name = font_name
+    @font_size = font_size
+    @font_emphasis = font_emphasis
+    @text = text
+  end
+
+  def to_s
+    @text
+  end
+
+  # codes...
+end
+```
+
+The Document now become StructuredDocument:
+
+```ruby
+class StructuredDocument
+  attr_accessor :title, :author, :paragraphs
+
+  def initialize title, author
+    @title = title
+    @author = author
+    @paragraphs = []
+    yield(self) if block_given?
+  end
+
+  def << paragraph
+    @paragraphs << paragraph
+  end
+
+  def content
+    @paragraphs.inject("") { |text, para| "#{text}\n#{para}" }
+  end
+
+  # ...
+end
+```
+
+The new StructuredDocument class is now a collection of paragraphs where each paragraph consists texts, a font name, font size and font emphasis. With StructuredDocument class like this, a resume may be created like so:
+
+```ruby
+russ_cv = StructuredDocument.new("Resume", "RO") do |cv|
+  cv << Paragraph.new :nimbus, 14, :bold, "Russ Olsen"
+  cv << Paragraph.new :nimbus, 12, :italic, "1313 Mocking Bird Lane"
+  cv << Paragraph.new :nimbus, 12, :none, "russ@russolsen.com"
+  # ...
+end
+```
+
+The problem with this is when building a document require more work. Take resume for example, each time creating a resume, user have to repeat the work of defining a new paragraph, set font name, size and emphasis. The user may need more specific method to create name, address... So, a Resume class is created for this:
+
+```ruby
+class Resume < StructuredDocument
+  def name text
+    paragraph = Paragraph.new :nimbus, 14, :bold, text
+    self << paragraph
+  end
+
+  def address text
+    paragraph = Paragraph.new :nimbus, 12, :italic, text
+    self << paragraph
+  end
+
+  def email text
+    paragraph = Paragraph.new :nimbus, 12, :none, text
+    self << paragraph
+  end
+
+  # ...
+end
+```
+
+Using these methods make the work of building a resume easier. But there are a lot of repeat code, each function doing some kind a same thing: create a paragraph and add it to the document.
+
+**Class Methods That Build Instance Methods**
+
+In Ruby, a class can be change at runtime and classes definition are executed. So it can be used to generates methods to avoid redundant code. A method like `paragraph_type` can be used to generate methods:
+
+```ruby
+class Resume < StructuredDocument
+  paragraph_type :introduction, font_name: :arial, font_size: 18, font_emphasis: :italic
+  # codes...
+end
+```
+
+The `paragraph_type` method will be defined in StructuredDocument like so:
+
+```ruby
+class StructuredDocument
+  def self.paragraph_type paragraph_name, options
+    # define function with name is paragraph_name and take options to built method body
+  end
+
+  # ...
+end
+```
+
+The `def` statement can not be used to dynamic define method. Ruby provides numbers of methods for dynamic generate functions like `class_eval`, `define_method`.
+
+`class_eval` takes a string and evaluates it like the code that appeared in class body. Example:
+
+```ruby
+class StructuredDocument
+  def self.paragraph_type paragraph_name, options
+    name = options[:font_name] || :arial
+    size = options[:font_size] || 12
+    emphasis = options[:font_emphasis] || :normal
+    code = %Q{
+      def #{paragraph_name}(text)
+        p = Paragraph.new(:#{name}, #{size}, :#{emphasis}, text)
+        self << p
+      end
+    }
+    class_eval code
+  end
+
+  # ...
+end
+```
+
+The `paragraph_type` method starts by pulling the font name, size, and emphasis out of the options hash, filling in defaults as needed. Then, it creates a string that contains the code for the new _subclass_ instance method. Finally, `paragraph_type` uses `class_eval` to execute the string to create an instance method for the subclass (any class that call paragraph_type method).
+
+Example:
+
+```ruby
+class Resume < StructuredDocument
+  paragraph_type :name, font_name: :arial, font_size: 18, font_emphasis: :bold
+  # return the following method:
+  # def name(text)
+  #   p = Paragraph.new(:arial, 18, :bold, text)
+  #   self << p
+  # end
+
+  # codes...
+end
+```
+
+The `define_method` method is used only for defining a method. It avoid evaluate string to runtime code. To use `define_method`, just call it with the name of the new method and a block, which is the defined method logic. It will return a new method with the given name and execute the block when called. Example:
+
+```ruby
+class StructuredDocument
+  def self.paragraph_type paragraph_name, options
+    name = options[:font_name] || :arial
+    size = options[:font_size] || 12
+    emphasis = options[:font_emphasis] || :none
+    define_method(paragraph_name) do |text|
+      paragraph = Paragraph.new name, size, emphasis, text
+      self << paragraph
+    end
+  end
+
+  # ...
+end
+```
+
+The `forwardable.rb`, which is part of Ruby standard library, has a lot of class-modifying methods. The idea of `forwardable.rb` is similar to `delegate.rb`, which is used for delegating methods. When `delegate.rb` use `method_missing` approach to delegation, catching calls to nonexistent methods and sending them to other object, `forwardable` just generates the delegating methods by calling class modified method.
+
+Forwardable is actually a module, so it have to be mix in at the class level with `extend`. Example:
+
+```ruby
+class DocumentWrapper
+  extend Forwardable
+
+  def_delegators :@real_doc, :title, :author, :content
+
+  def initialize real_doc
+    @real_doc = real_doc
+  end
+end
+
+real_doc = Document.new "Two Cities", "Dickens", "It was..."
+wrapped_doc = DocumentWrapper.new real_doc
+
+puts wrapped_doc.title
+puts wrapped_doc.author
+puts wrapped_doc.content
+```
+
+Here is a partial implementation of Forwardable module:
+
+```ruby
+module Forwardable
+  # codes...
+
+  def def_instance_delegator accessor, method, ali = method
+    str = %{
+      def #{ali} *args, &block
+        #{accessor}.__send__ :#{method}, *args, &block
+      end
+    }
+    module_eval str, __FILE__, line_no
+  end
+end
+```
