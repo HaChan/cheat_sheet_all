@@ -1890,7 +1890,7 @@ The `Test::Unit` framework use hook to execute test case with out to have write 
 `simple_test.rb`
 
 ```ruby
-require 'test/unit'
+require "test/unit"
 
 class SimpleTest < Test::Unit::TestCase
   def test_addition
@@ -1996,7 +1996,7 @@ class SuperSecretDocument
   end
 
   def check_for_expiration
-    raise 'Document no longer available' if time_expired?
+    raise "Document no longer available" if time_expired?
   end
 
   def content
@@ -2326,7 +2326,7 @@ Executable class definitions are wonderfully useful when writing code that will 
 class Document
   # codes...
 
-  if RUBY_VERSION >= '1.9'
+  if RUBY_VERSION >= "1.9"
     def char_at index
       @content[index]
     end
@@ -2627,3 +2627,337 @@ module Forwardable
   end
 end
 ```
+
+##Pulling it all together
+
+###Internal DSL
+
+Rake. RSpec. ActiveRecord models are examples of the internal Domain Specific Language, or DSL. It is a particular style of programming which allows the developer to create tools that can solve a class of problems.
+
+DSL tries to solve a small narrowly defined class of problems, not to be able to solve general problems. The traditional way to build a DSL is to start coding a whole new language with parsers and compilers. This approach is called the **external DSL**, external in the sense that the new language is separate or external from the implementation language. The downside of this approach is to build a whole new language, which is complicated with various choices and work to do.
+
+The alternative is to build a DSL atop an existing language. The advantages of this approach is that it can use all the feature of the existing language and the developer did not have to write the language from scratch to solve the problem. This approach is called the **internal DSL**. Internal DSLs are internal in that the DSL is built right into the implementation language.
+
+Example: Dealing with XML.
+
+First, let see an example of how to read XML file with ruby.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<document>
+  <title>The Fellowship Of The Ring</title>
+  <author>J. R. R. Tolken</author>
+  <published>1954</published>
+
+  <chapter>
+    <title>A Long Expected Party</title>
+    <content>When Mr. Bilbo Bagins of Bag End...</content>
+  </chapter>
+
+  <chapter>
+    <title>A Shadow Of The Past</title>
+    <content>The talk did not die down...</content>
+  </chapter>
+
+  <!-- ect -->
+</document>
+```
+
+
+```ruby
+require "rexml/document"
+
+File.open "fellowship.xml" do |f|
+  doc = REXML::Document.new f
+  author = REXML::XPath.first doc, "/document/author"
+  puts author.text
+end
+```
+
+
+This script relies on Ruby XML parsing library rexml. It provide a lot of facilities including XPath, which allows to navigate through the XML heirarchy with string like "document/author". So, finding all title in this XML is just a tiny step:
+
+```ruby
+require "rexml/document"
+
+File.open "fellowship.xml" do |f|
+  doc = REXML::Document.new f
+  REXML::XPath.first doc, "/document/chapter/title"
+    puts author.text
+  end
+end
+```
+
+But, there is a lot of redundant code in the above examples. Each one needs to require the REXML library, open the file and do some XPath searching. It needs to be refactored:
+
+```ruby
+require "rexml/document"
+
+class XmlRipper
+  def initialize(&block)
+    @before_action = proc{}
+    @path_actions = {}
+    @after_action = proc{}
+    block.call(self) if block
+  end
+
+  def on_path path, &block
+    @path_actions[path] = block
+  end
+
+  def before &block
+    @before_action = block
+  end
+
+  def after &block
+    @after_action = block
+  end
+
+  def run xml_file_path
+    File.open xml_file_path do |f|
+      document = REXML::Document.new f
+      @before_action.call document
+      run_path_actions document
+      @after_action.call document
+    end
+  end
+
+  def run_path_actions document
+    @path_actions.each do |path, block|
+      REXML::XPath.each document, path do |element|
+        block.call element
+      end
+    end
+  end
+end
+```
+
+The `XmlRipper` class is built around the `@path_actions` hash, which map strings containing XPaths to Ruby code blocks. The idea is that `@path_actions` hash is filled by calling the `on_path` method. When it is done, the `run` method is called with the XML file name. The `run` method will open the XML file, find the matching XPaths and fire off the associated code block for each match.
+
+Example using `XmlRipper`:
+
+```ruby
+ripper = XmlRipper.new do |r|
+  r.on_path "/document/author" {|a| puts a.text}
+  r.on_path "/document/chapter/title" {|t| puts t.text}
+end
+
+ripper.run "fellowship.xml"
+```
+
+Fixing the name of the author:
+
+```ruby
+ripper = XmlRipper.new do |r|
+  r.on_path "/document/author" {|a| a.text = "J.R.R. Tolkien"}
+  r.after {|doc| puts doc}
+end
+
+ripper.run "fellowship.xml"
+```
+
+**Brief of DSL**
+
+XmlRipper scripts have a very declarative and specialized language feel but is not literally a DSL. Let make it more DSL like. First is to get rid of the need to constantly refer to the new `XMLRipper` instance (`r`) inside the code block. It can be done by passing the code block to `instance_eval` method. `instance_eval` will execute the code block with the value of `self` is the value of the object that call the `instance_eval` method: like `some_object.instance_eval block`, the value of self in `instance_eval` will become `some_object` as the block executes.
+
+Let rewrite the `XMLRipper` initialize method using instance_eval:
+
+```ruby
+class XmlRipper
+  def initialize(&block)
+    @before_action = proc{}
+    @path_actions = {}
+    @after_action = proc{}
+    instance_eval &block if block
+  end
+
+  # codes
+end
+```
+
+So, the example above can be rewrite with the new implementation of the XmlRipper class:
+
+```ruby
+ripper = XmlRipper.new do
+  on_path "/document/author"  do |author|
+    author.text = "J.R.R. Tolkien"
+  end
+  after { |doc| puts doc }
+end
+
+ripper.run "fellowship.xml"
+```
+
+The Metaprogramming technique can be used here to make the XmlRipper class more flexible. For example XmlRipper can provide a method name represent the XPath like this:
+
+    on_document_author { |author| puts author.text }
+
+Definitely a job for `method_missing`:
+
+```ruby
+class XmlRipper
+  # codes...
+
+  def method_missing( name, *args, &block )
+    return super unless name.to_s =~ /on_.*/
+    parts = name.to_s.split  "_"
+    parts.shift
+    xpath = parts.join "/"
+    on_path xpath, &block
+  end
+end
+```
+
+###External DSL
+
+**Why External DSL**
+
+Consider the Ripper Internal DSL case. What if the users want to use something simple like this:
+
+    print /document/author
+
+instead of this:
+
+    on_path "/document/author" { |author| puts author.text }
+
+And they want simpler `delete` and `replace` commands just like that:
+
+    delete /document/published
+    replace /document/author Tolkien
+
+It is not possible to write an internal DSL for these expression because it is invalid Ruby expression.
+
+The external DSL is fits for this jobs. It is like the traditional language-building approach: a new syntax, has it own parser. Because of the custom parser, the external DSL does not encumbered by the rules of Ruby grammar.
+
+Ruby has powerful strings and built-in regular expressions so it is a pretty good language for building external DSL.
+
+Let's have an example of a simple parser:
+
+```ruby
+class EzRipper
+  def initialize program_path
+    @ripper = XmlRipper.new
+    parse_program program_path
+  end
+
+  def run xml_file
+    @ripper.run xml_file
+  end
+
+  def parse_program program_path
+    File.open(program_path) do |f|
+      until f.eof?
+        parse_statement f.readline
+      end
+    end
+  end
+
+  def parse_statement statement
+    tokens = statement.strip.split
+    return if tokens.empty?
+
+    case tokens.first
+    when "print"
+      @ripper.on_path tokens[1] do |el|
+        puts el.text
+      end
+    when "delete"
+      @ripper.on_path tokens[1] {|el| el.remove}
+    when "replace"
+      @ripper.on_path tokens[1] {|el| el.text = tokens[2]}
+    when "print_document"
+      @ripper.after do |doc|
+        puts doc
+      end
+    else
+      raise "Unknown keyword: #{tokens.first}"
+    end
+  end
+end
+```
+
+To change the author name and delete the publication date from an XML file with the new external DSL, first create a file with any kind of name, like `edit.erz`, containing:
+
+```
+delete /document/published
+replace /document/author Tolkien
+print_document
+```
+
+After that, we use EzRipper to run this file, like so:
+
+    EzRipper.new("edit.ezr").run "fellowship.xml"
+
+The `EzRipper` class really just provides a fancy front end for the original `XmlRipper` class. The parser reads in a line at a time and breaks up the statement into tokens (separated by space). The EzRipper use the first token to determine the action to perform with.
+
+It can be improve with some errors checking and exception handling:
+
+```ruby
+def parse_statement( statement )
+  # ...
+  case tokens.first
+  when "print"
+    raise "Expected print <xpath>" unless tokens.size == 2
+    # ...
+  end
+  when "delete"
+    raise "Expected delete <xpath>" unless tokens.size == 2
+    # ...
+  when "replace"
+    raise "Expected replace <xpath> <value>" unless tokens.size == 3
+    # ...
+  when "print_document"
+    raise "Expected print_document" unless tokens.size == 1
+    # ...
+  else
+    raise "Unknown keyword: #{tokens.first}"
+  end
+end
+```
+
+**Heavier Parsing with Regular Expressions**
+
+EzRipper have a potentially serious problem: it can not handle space embeded in the command arguments, like:
+
+    replace '/document/author' 'Russ Olsen'
+
+Regular Expression is the key to this problem. It can handle a lot more complex syntax. Here is a new `parse_statement` method implement with regular expressions:
+
+```ruby
+def parse_statement( statement )
+  case statement.strip
+  when ""
+    # Skip blank lines
+  when /print\s+'(.*?)'/
+    @ripper.on_path( $1 ) do |el|
+      puts el.text
+    end
+  when /delete\s+'(.*?)'/
+    @ripper.on_path($1) {|el| el.remove}
+  when /replace\s+'(.*?)'\s+'(.*?)'$/
+    @ripper.on_path($1) {|el| el.text = $2}
+  when /uppercase\s+'(.*?)'/
+    @ripper.on_path($1) {|el| el.text = el.text.upcase}
+  when /print_document/
+    @ripper.after do |doc|
+      puts doc
+    end
+  else
+    raise "Don't know what to do with: #{statement}"
+  end
+end
+```
+
+They may look formidable but these regular expressions are not really complex. Let's take one example to examine further:
+
+    /replace\s+'(.*?)'\s+'(.*?)'$/
+
+The `replace` in this expression telling that if the statement want to use `replace` command. Next, let's see what this:
+
+    \s+'(.*?)'
+
+do. This expression is designed to match one quoted argument, like '/document/chapter/title' or 'Russ  Olsen'. This expression starts with `\s+`, which match one or more white space characters. Next, the '(.*?)' mean any character within a quote. `*?` mean non gready matching, which match the smallest bit of text. By putting parentheses around any part of the regular expressions, Ruby will capture exactly any thing matched in the parentheses and store them in the `$1, $2, $3` variables, so it can be referenced later.
+
+**To deal with a complicated jobs, consider using Treetop for parsing.**
+
+
