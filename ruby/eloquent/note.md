@@ -1,4 +1,60 @@
-#Ruby programming language note
+#My notes when reading this book
+
+Navigation:
+
+ - [Write Spec](#write-spec)
+
+ - [Class, module and blocks](#class-module-and-blocks)
+
+   + [Construct Classes from short, focused methods](#construct-classes-from-short-focused-methods)
+
+   + [Composing Methods for Humans](#composing-methods-for-humans)
+
+   + [Composing Ruby Methods](#composing-ruby-methods)
+
+   + [One way output](#one-way-output)
+
+   + [Define Operators Respectfully](#define-operators-respectfully)
+
+   + [Create Classes that Understand Equality](#create-classes-that-understand-equality)
+
+   + [Singleton methods and class methods](#singleton-methods-and-class-methods)
+
+   + [Class Instance Variables](#class-instance-variables)
+
+   + [Module as Namespaces](#module-as-namespaces)
+
+   + [Use Modules as Mixins](#use-modules-as-mixins)
+
+   + [Use Blocks to Iterate](#use-blocks-to-iterate)
+
+   + [Execute Around with a Block](#execute-around-with-a-block)
+
+   + [Save Blocks to Execute later](#save-blocks-to-execute-later)
+
+   + [Save Blocks to Execute later](#save-blocks-to-execute-later)
+
+- [Metaprogramming](#metaprogramming)
+
+   + [Use Hooks to Keep the Program stay Informed](#use-hooks-to-keep-the-program-stay-informed)
+
+   + [Error Handling with method_missing](#error-handling-with-method_missing)
+
+   + [Delegation with method_missing](#delegation-with-method_missing)
+
+   + [Monkey patching](#monkey-patching)
+
+   + [Self-Modifying Classes](#self-modifying-classes)
+
+   + [Classes that Modify Their Subclasses](#classes-that-modify-their-subclasses)
+
+- [Pulling it all together](#pulling-it-all-together)
+
+   + [Internal DSL](#internal-dsl)
+
+   + [External DSL](#external-dsl)
+
+   + [Package Programs as Gems](#package-programs-as-gems)
 
 ##Basics
 
@@ -1783,7 +1839,7 @@ end
 
 Every time a new DocumentReader subclass is created, the `inherited` hook will add the new subclass to the list of readers.
 
-####Infomr of Modules
+####Inform of Modules
 
 The module analog of `inherited` is `included`. `included` gets called when a module gets included in a class.
 
@@ -2962,3 +3018,117 @@ do. This expression is designed to match one quoted argument, like '/document/ch
 
 ###Package Programs as Gems
 
+**Gem Version**
+
+Every gem is tagged with a version number and most gens exist in multiple versions. To see what vesions are available for any given gem, use `gem list` command:
+
+    gem list -a --remote gem-name
+
+`-a`: print all gem's versions
+
+`--remote`: list gems stored in default remote repository, not just on local machine.
+
+The technology behind RubyGems is simple: The gem developer package up their work into a single file, a standardized archive containing code and metadata (gem version number, other dependent gems). Once the code is packed into the **gem file**, the developer uploads it to a well-known repository, where gem install will find it.
+
+When a gem is installed, Ruby will unpack it to a well-known directory, and Ruby will ensure that the directory containing the code for that gem is searched when it's loaded by `require` or `load`.
+
+**Building a Gem**
+
+To build a gem, the first thing is organize the project directories to match the standard gem layout. Example with the `Document` class:
+
+![](gem-directory.png)
+
+The top-level directory name will match the name of the gem, in this case `Document`. Under this directory, there are README file, a directory for unit test (spec/), and `lib` directory for holding Ruby code. Naming the main Ruby file after gem is polite, but not required.
+
+If the gem is complicated and have multiple source files, creates directories under the `lib` directory and store those source files. In the main Ruby gem file, include those additional source files with `require` like so:
+
+```r
+require "directories/source-file"
+```
+
+Th other thing that a gem needs is metadata. RubyGems need to know what is the gem name, it version... To do that, a file called `gemspec` need to be created. A `gemspec` is a Ruby file that creates an instance of the `Gem::Specification` class. Example:
+
+gemspec
+```ruby
+Gem::Specification.new do |s|
+  s.name = "document"
+  s.version = "1.0.1"
+  s.authors = ["Russ Olsen"]
+  s.date = %q{2010-01-01}
+  s.description = "Document - Simple document class"
+  s.summary = s.description
+  s.email = "russ@russolsen.com"
+  s.files = ["README", "lib/document.rb","spec/document_spec.rb"]
+  s.homepage = "http://www.russolsen.com"
+  s.has_rdoc = true
+  s.rubyforge_project = "simple_document"
+end
+```
+
+If the gem depends on having other gems installed in order to work, it can be specified in the `gemspec` too. Example, if the Document gem need the text gem to work, just add:
+
+    s.add_dependency "text"
+
+If the gem includes executable scripts, it can be specified too. Example:
+
+    s.bindir = "bin"                          # Specify the directory
+    s.executables = ["spellcheck"]            # Then the file in the dir
+
+Once ready, just run the `gem build` command:
+
+    gem build document.gem
+
+This command will create a file called `document-1.0.1.gem`, and it can be installed by:
+
+    gem install document-1.0.1.gem
+
+**Upload to a Repository**
+
+To upload a gem to `http://gems.rubyforge.org`, first set up an account at `http://gemcutter.org` and then install the gemcutter:
+
+    gem install gemcutter
+
+Finally, push the gem up to the Gemcutter repository:
+
+    gem push document-1.0.0.gem
+
+
+**Automating Gem creation with Rakefile**
+
+```ruby
+require "spec/rake/spectask"
+require "rake/gempackagetask"
+
+task :default => [:spec, :gem]
+Spec::Rake::SpecTask.new do |t|
+  t.spec_files = FileList["spec/**/*_spec.rb"]
+end
+
+gem_spec = Gem::Specification.new do |s|
+  s.name = "document"
+  s.version = "1.0.1"
+  s.authors = ["Russ Olsen"]
+  s.date = %q{2010-05-23}
+  s.description = "Document - Simple document class"
+  s.summary = s.description
+  s.email = "russ@russolsen.com"
+  s.files = ["README","lib/document.rb", "spec/document_spec.rb"]
+  s.homepage = "http://www.russolsen.com"
+  s.has_rdoc = true
+  s.rubyforge_project = "simple_document"
+end
+
+Rake::GemPackageTask.new gem_spec do |t|
+  t.need_zip = true
+end
+```
+
+This Rakefile use the built-in tasks that will build a gem. All it need is specify the gemspec information in the Rakefile.
+
+Because Rake does not have a built-in task to push the final gem file up to Gemcutter, so it need be added:
+
+```ruby
+task push: :gem do |t|
+  sh "gem push pkg/#{gem_spec.name}-#{gem_spec.version}.gem"
+end
+```
