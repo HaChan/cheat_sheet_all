@@ -313,7 +313,7 @@ def gear_inches
 end
 ```
 
-Hidden inside gear_inches is the calculation for wheel diameter. Extracting that calculation into this new diameter method will make it easier to examine the class’s responsibilities:
+Hidden inside `gear_inches` is the calculation for wheel diameter. Extracting that calculation into this new diameter method will make it easier to examine the class’s responsibilities:
 
 ```ruby
 def gear_inches
@@ -325,7 +325,7 @@ def diameter
 end
 ```
 
-This simple refactoring makes the problem obvious. `Gear` is definitely responsible for calculating gear_inches, but it should not calculating wheel diameter.
+This simple refactoring makes the problem obvious. `Gear` is definitely responsible for calculating `gear_inches`, but it should not calculating wheel diameter.
 
 Methods that have a single responsibility confer the following benefits:
 
@@ -372,7 +372,7 @@ end
 
 Embedding this `Wheel` in `Gear` is obviously not the long-term design goal; it’s more an _experiment in code organization_.
 
-Embedding `Wheel` inside og `Gear` suggest that `Wheel` only exist in the context of a `Gear`. In this case, the creation for `Wheel` class is needed. However, every domain isn’t this clear-cut.
+Embedding `Wheel` inside `Gear` suggest that `Wheel` only exist in the context of a `Gear`. In this case, the creation for `Wheel` class is needed. However, every domain isn’t this clear-cut.
 
 If a muddled class with too many responsibilities, separate those responsibilities into different classes. Concentrate on the primary class. If an extra responsibilities that cannot yet remove, isolate them.
 
