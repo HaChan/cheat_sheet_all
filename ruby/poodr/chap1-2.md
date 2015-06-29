@@ -64,7 +64,7 @@ The first step in creating code that is Transparent, Reasonable, Usable, and Exe
 
 This example is about gear and bicycle. Gear is a part of bicycle and it changes the distance that the bicycle traveled each time the pedals complete a circle. More specifically, your gear controls how many times the wheels rotate for each time the pedals rotate. With small gear, the pedal has to spin several times to make the wheels rotate just once; in a big gear each complete pedal rotation may cause the wheels to rotate multiple times.
 
-To compare different gears. bicyclists use the ratio of the numbers of their teeth. These ratio can be calculated with this simple formula:
+To compare different gears. Bicyclists use the ratio of the numbers of their teeth. These ratio can be calculated with this simple formula:
 
     ratio = chainring / cog
 
