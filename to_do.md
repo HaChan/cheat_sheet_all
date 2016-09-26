@@ -12,6 +12,8 @@
     
     [subquery optimization](http://dev.mysql.com/doc/refman/5.7/en/subquery-optimization.html)
     
+    [Create User defined Function](http://dev.mysql.com/doc/refman/5.7/en/create-function-udf.html)
+    
 2. Rails cache
 
   http://www.justinweiss.com/articles/a-faster-way-to-cache-complicated-data-models/
