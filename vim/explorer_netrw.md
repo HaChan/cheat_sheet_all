@@ -1,4 +1,4 @@
-###Entering Explorer Mode
+### Entering Explorer Mode
 
 Type
 
@@ -8,13 +8,13 @@ or
 
     :explore
 
-###Toggling the List Style
+### Toggling the List Style
 
 Press `i` will toggle the appearance of the file tree. To set the NerdTree style to be default, putting this line in `.vimrc`:
 
     let g:netrw_liststyle=3
 
-###Explorer Mode command
+### Explorer Mode command
 
 1. `d` creates a new directory
 
