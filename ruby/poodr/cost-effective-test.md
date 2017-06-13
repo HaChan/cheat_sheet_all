@@ -1,4 +1,4 @@
-#Designing Cost-Effective Tests
+# Designing Cost-Effective Tests
 
 Writing changeable code requires three skill:
 
@@ -14,7 +14,7 @@ Tests can reduce bugs and provide documentation, and writing tests **first** imp
 
 Writing good tests requires **clarity of intention** and knowing what, when and how to test.
 
-###1.1 Intentions
+### 1.1 Intentions
 
 **Finding Bugs**
 
@@ -42,7 +42,7 @@ When the design is bad, testing is hard.
 
 However, costly tests do not mean that the application is poorly designed. It's possible to write bad tests for well-designed code. Therefore, both the underlying application and the tests must be well-designed.
 
-###1.2 Knowing What to Test
+### 1.2 Knowing What to Test
 
 The design principles that are enforced in the application apply to test as well. Each test is merely another application object that needs to use an existing class. The more test gets coupled to that class, the more vulnerable the test is to unnecessary forced to change.
 
@@ -62,11 +62,11 @@ There are two types of outgoing messages, one is the messages like the above, an
 
 Guidelines for what to test: **Incoming messages should be tested for the state they return. Outgoing command messages should be tested to ensure they get sent. Outgoing query messages should not be tested**.
 
-###1.3 Knowing When to Test
+### 1.3 Knowing When to Test
 
 **Test should be written first whenever it makes sense to do so**.
 
-###1.4 Knowing How to Test
+### 1.4 Knowing How to Test
 
 Test frameworks for Ruby: `MiniTest`, `RSpec`..
 
@@ -86,7 +86,7 @@ When testing, application's objects should be divided into two major categories:
 
 Test must know things about the first category and remain as ignorant as possible about the second. Pretend that only the first category object exist and the other objects aren't even exist.
 
-##2. Testing Incoming Messages
+## 2. Testing Incoming Messages
 
 The code is about `Gear` and `Wheel` before it's applied with techniques in [Managing Dependencies](managing-dependencies.md).
 
@@ -124,7 +124,7 @@ class Gear
 end
 ```
 
-###2.1 Deleting Unused Interfaces
+### 2.1 Deleting Unused Interfaces
 
 Incoming messages ought to have dependents. Some object **other than the original implementer** depends on these messages. In order to expose it easily, one technique is to construct a table which show the messages that cross the object under test's boundaries:
 
@@ -137,7 +137,7 @@ Incoming messages ought to have dependents. Some object **other than the origina
 
 If there is a _incoming message_ that doesn't have any dependents, it might not be an incoming message. Thus these kind of message don't need to be tested and it should be deleted immediately.
 
-###2.2 Proving the Public Interface
+### 2.2 Proving the Public Interface
 
 Incoming messages are tested by **making assertions about the value**, or **state** that **their invocation returns**. The **first requirement** for testing an incoming message is to **prove** that it **returns the correct value** in **every possible situation**.
 
@@ -177,7 +177,7 @@ Tests run fastest when they execute the least code and the volume of external co
 
 Because tests are the first reuse of code, these problems are manifested in the tests.
 
-###2.3 Isolating the Object Under Test
+### 2.3 Isolating the Object Under Test
 
 In [Managing Dependencies](managing-dependencies.md), it introduces the technique that broke this coupled by injecting an object that understand `diameter`:
 
@@ -221,7 +221,7 @@ With this test, it's not so obvious that `Wheel` is playing the `Diameterizable`
 
 However, structuring test this way has a real advantage as follow:
 
-###2.4 Injecting Dependencies Using Classes
+### 2.4 Injecting Dependencies Using Classes
 
 When code in the test uses the same collaborating objects as the code in the application, tests always break when they should. This brings value to the application.
 
@@ -229,7 +229,7 @@ Example: imagine that `Diameterizable` public interface changes, the `diameter` 
 
 This failure show that the `Gear` needs to updated to send `width` instead of `diameter`. This test only work for a concrete class `Wheel` but there are other situation which testing abstraction is more appropriate.
 
-###2.5 Injecting Dependencies as Roles
+### 2.5 Injecting Dependencies as Roles
 
 `Gear` and `Wheel` both have relationships with `Diameterizable` role. `Diameterizable` is depended on by (injected into) `Gear` and implemented by `Wheel`.  This role is an abstraction of the objects that have `diameter`. Abstraction role should be more stable than the concretion which it came. However in this case, the abstraction interface is changed.
 
@@ -241,7 +241,7 @@ When a role has a single player, the concrete player and the abstract role are e
 
 However, if `Wheel` is expensive or there are more than one player that play `Diameterizable` role, it is necessary to use other technique to tackle this problem. For expensive `Diameterizable`, faking a cheap one can make the test run faster. For different `Diameterizable`, creating and idealized one so the tests clearly convey the idea of this role.
 
-####2.5.1 Creating Test Doubles
+#### 2.5.1 Creating Test Doubles
 
 **Test double** is an idea of **creating a fake object**. For example: using test double to play the `Diameterizable` role.
 
@@ -268,7 +268,7 @@ Using test double introduces a new problem. When the role interface changes, the
 
 The problem here is , when `GearTest` created `DiameterDouble`, it **introduce a second player of the role**. When the interface of the role changes, all players must adopt the new interface. While `Wheel` is updated its interface, `DiameterDouble` does not.
 
-####2.5.2 Using Tests to Document Roles
+#### 2.5.2 Using Tests to Document Roles
 
 This problem occurs because the role is nearly invisible. One way to raise the role's visibility is to assert that players play it. For example, using assertion to check if `Wheel` plays `Diameterizable` role:
 
@@ -299,27 +299,27 @@ The private messages is the messages that sent to `self`. Private messages doesn
 
 However, dealing with private message requires judgment and flexibility.
 
-###3.1 Ignoring Private Methods During Tests.
+### 3.1 Ignoring Private Methods During Tests.
 
 These private methods are hidden inside the object under test and their result cannot be seen by others. These method are invoked by public methods that already have tests so testing them is redundant. And since private methods are unstable, tests of private methods are therefore coupled to code that are likely to change. So when the application change the tests have to change as well. One possible to not testing private methods is that it might mislead others into using them.
 
-###3.2 Removing Private Methods from the Class Under Test
+### 3.2 Removing Private Methods from the Class Under Test
 
 It is better to avoid private methods altogether. No methods no tests.
 
 An object with many private methods shows that it has too many responsibilities. These private methods need to be extracted to new object. The extracted methods form the core of the responsibilities of the new object and so make up its public interface, which is ought to be stable. Because the new public interface will be as stable as the original private interface, it is still costly to couple to these methods.
 
-###3.3 Choosing to Test a Private Method
+### 3.3 Choosing to Test a Private Method
 
 Sometime private methods can be used to place the smelly, offending code in order to defer a design decision. This complexity need to be isolated behind the best interface (public interface). Testing these private method will reduce the overall cost caused by this decision. These tests produce error messages that directly point to the falling parts of the private code. These errors make it easier to understand the effects of changes in the private code.
 
-##4 Testing Outgoing Messages
+## 4 Testing Outgoing Messages
 
-###4.1 Ignoring Query Messages
+### 4.1 Ignoring Query Messages
 
 Query messages, which are introduced in [Knowing What to Test](#knowing-what-to-test) are messages that have no side effects. These messages don't need to be tested in the sender object because it is tested in the receiver object.
 
-###4.2 Proving Command Messages
+### 4.2 Proving Command Messages
 
 Command messages have side effect other than just return a result. The sender objects are depended on these effects and so it needs to be tested to ensure that these command messages are sent.
 
@@ -379,11 +379,11 @@ end
 
 The `test_notifies_observers_when_cogs{chainrings}_change` test passed only if sending `set_cogs{chainring}` does something that causes `observer` to receive `changed` with the given arguments.
 
-##5 Testing Duck Types
+## 5 Testing Duck Types
 
 Testing duck types means testing roles.
 
-###5.1 Testing Roles
+### 5.1 Testing Roles
 
 The first example code comes from the `Preparer` duck type from [Reducing Costs with Duck Typing](duck-typing.md). `Mechanic`, `TripCoordinator` and `Driver` are `Preparer` that have `prepare_trip` method:
 
@@ -481,7 +481,7 @@ end
 
 The `test_requests_trip_preparation` lives directly in `TripTest`. Because `Trip` is the only `Preparable` so there's no other object which need to share this test. If there are more `Preparable`, the test should be extracted into a module and shared among `Preparable`s.
 
-###5.2 Using Role Tests to Validate Doubles
+### 5.2 Using Role Tests to Validate Doubles
 
 The Role testing technique can be used to reduce the brittleness caused by stubbing. In the [testing incoming message](#testing-incoming-messages), the problem of stubbing is introduced. When stubbing don't get verified that if it is implementing the role's interface, it will cause the problem that the tests are still pass but the application is broken.
 
@@ -511,11 +511,11 @@ end
 
 This test will force `DiameterDouble` to change from `diameter` to `width` method to ensure that `DiameterDouble` implements `Diameterizable` interface. It ensure that the test runs correctly as the application's function.
 
-###5.3 Refactor to Duck Types
+### 5.3 Refactor to Duck Types
 
 If the code is too coupled (using `case` to switch on class name instead of using duck types) and it hasn't have a test, the best practice is to refactor the code to use duck types first then writing test later.
 
-##6 Testing Inherited Code
+## 6 Testing Inherited Code
 
 The example code used here is the final `Bicycle` hierarchy from [Acquiring Behavior through Inheritance](inheritance.md).
 
@@ -547,7 +547,7 @@ class Bicycle
 end
 ```
 
-###6.1 Specifying the Inherited Interface
+### 6.1 Specifying the Inherited Interface
 
 The first testing goal is to prove that all objects in this hierarchy honor their contract. The LSP declares that subtypes should be substitutable for their supertype. The easiest way to prove this is to write a shared test for the common contract and include this test in every object in the hierarchy. The following test demonstrate this idea on `Bicycle` hierarchy:
 
@@ -601,11 +601,11 @@ end
 
 The `BicycleInterfaceTest` will work for every kind of `Bicycle` and can be easily included in any new subclass. It documents the interface and prevents accidental regressions.
 
-###6.2 Specifying Subclass Responsibilities
+### 6.2 Specifying Subclass Responsibilities
 
 The abstract `Bicycle` superclass imposes requirements upon its subclasses.
 
-####6.2.1 Confirming Subclass Behavior
+#### 6.2.1 Confirming Subclass Behavior
 
 Some behavior of the abstract superclass is only a stub for its subclasses to implement. These behavior belong to subclass so they need a separate module to document it. In this `Bicycle` example, the `post_initialize`, `local_spares`, and `default_tire_size` are methods that subclasses can implement more specifically. They are documented in a separate module:
 
@@ -627,7 +627,7 @@ end
 
 This test just proves that a subclass does nothing so crazy that it causes these messages to fail. The only method that must be implemented by subclasses is `default_tire_size`. Because the `default_tire_size` implementation of `Bicycle` raises an error, subclasses have to implement this method in order to pass the test.
 
-####6.2.2 Confirming Superclass Enforcement
+#### 6.2.2 Confirming Superclass Enforcement
 
 The `Bicycle` should raise error if a subclass doesn't implement `default_tire_size`. Even though this requirement applies to subclasses, the actual enforcement is in `Bicycle`. Therefore the test should placed directly in `BicycleTest`:
 
@@ -649,15 +649,15 @@ Notice: `Bicycle` instance in this test is created with `tire_size` argument. Th
 
 This problem is ubiquitous when testing abstract classes. Abstract class need to be tested to enforce its behavior, however creating an instance for it is not always possible or costless. There is an easy solution for this problem which will be describe in [Testing abstract superclass behavior](testing-abstract-superclass-behavior.md)
 
-###6.3 Testing Unique Behavior
+### 6.3 Testing Unique Behavior
 
 Specializations supplied by individual subclasses and also with the behavior that is unique to the superclass need to be tested.
 
-####6.3.1 Testing Concrete Subclass Behavior
+#### 6.3.1 Testing Concrete Subclass Behavior
 
 It's important to test specializations without embedding knowledge of the superclass into the test. Example: `RoadBike` implements `local_spares` and also responds to `spares`. `RoadBike` should ensure that `local_spares` works while ignoring the existence of `spares` method since `RoadBike` proves that it responds to `spares` with `BicycleInterfaceTest`.
 
-####6.3.2 Testing Abstract Superclass Behavior
+#### 6.3.2 Testing Abstract Superclass Behavior
 
 In order to test the abstract superclass without having to create an instance directly from it, instead creating a subclass of the abstract superclass and stubbing those methods which need concrete implementation in order to run properly.
 
