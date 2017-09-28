@@ -1,4 +1,2 @@
-Cheat sheet all
+Things that I learned (mostly tech stuff)
 ================
-
-Cheatsheet for development and configuration
